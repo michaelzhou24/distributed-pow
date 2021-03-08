@@ -37,7 +37,7 @@ func main() {
 	defer client.Close()
 	defer client2.Close()
 
-	if err := client.Mine([]uint8{1, 2, 3, 4}, 7); err != nil {
+	if err := client.Mine([]uint8{1, 2, 3, 4}, 6); err != nil {
 		log.Println(err)
 	}
 	if err := client.Mine([]uint8{5, 6, 7, 8}, 5); err != nil {
@@ -46,7 +46,7 @@ func main() {
 	if err := client2.Mine([]uint8{2, 2, 2, 2}, 5); err != nil {
 		log.Println(err)
 	}
-	if err := client2.Mine([]uint8{2, 2, 2, 2}, 7); err != nil {
+	if err := client2.Mine([]uint8{2, 2, 2, 2}, 6); err != nil {
 		log.Println(err)
 	}
 

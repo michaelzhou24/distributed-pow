@@ -33,12 +33,14 @@ type CoordinatorConfig struct {
 type CoordinatorMine struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
+	TraceToken tracing.TracingToken
 }
 
 type CoordinatorWorkerMine struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	WorkerByte       uint8
+	TraceToken tracing.TracingToken
 }
 
 type CoordinatorWorkerResult struct {
@@ -46,18 +48,21 @@ type CoordinatorWorkerResult struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
+	TraceToken tracing.TracingToken
 }
 
 type CoordinatorWorkerCancel struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	WorkerByte       uint8
+	TraceToken tracing.TracingToken
 }
 
 type CoordinatorSuccess struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	Secret           []uint8
+	TraceToken tracing.TracingToken
 }
 
 type Coordinator struct {
@@ -70,12 +75,14 @@ type Coordinator struct {
 type CoordMineArgs struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
+	TraceToken tracing.TracingToken
 }
 
 type CoordMineResponse struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	Secret           []uint8
+	TraceToken tracing.TracingToken
 }
 
 type CoordResultArgs struct {
@@ -83,6 +90,7 @@ type CoordResultArgs struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
+	TraceToken tracing.TracingToken
 }
 
 type ResultChan chan CoordResultArgs
@@ -125,10 +133,11 @@ func NewCoordinator(config CoordinatorConfig) *Coordinator {
 
 // Mine is a blocking RPC from powlib instructing the Coordinator to solve a specific pow instance
 func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) error {
-
-	c.tracer.RecordAction(CoordinatorMine{
+	trace := c.tracer.ReceiveToken(args.TraceToken)
+	trace.RecordAction(CoordinatorMine{
 		NumTrailingZeros: args.NumTrailingZeros,
 		Nonce:            args.Nonce,
+		TraceToken: args.TraceToken,
 	})
 
 	// check cache before doing anything
@@ -142,10 +151,11 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			reply.Nonce = args.Nonce
 			reply.Secret = val
 
-			c.tracer.RecordAction(CoordinatorSuccess{
+			trace.RecordAction(CoordinatorSuccess{
 				Nonce:            reply.Nonce,
 				NumTrailingZeros: reply.NumTrailingZeros,
 				Secret:           reply.Secret,
+				TraceToken: args.TraceToken,
 			})
 			return nil
 		}
@@ -168,12 +178,14 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
 			WorkerBits:       c.workerBits,
+			TraceToken: args.TraceToken,
 		}
 
-		c.tracer.RecordAction(CoordinatorWorkerMine{
+		trace.RecordAction(CoordinatorWorkerMine{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
+			TraceToken: args.TraceToken,
 		})
 
 		err := w.client.Call("WorkerRPCHandler.Mine", args, &struct{}{})
@@ -188,7 +200,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	if result.Secret == nil {
 		log.Fatalf("First worker result appears to be cancellation ACK, from workerByte = %d", result.WorkerByte)
 	}
-
+	// TODO: Deal with multiple results
 	// after receiving one result, cancel all workers unconditionally.
 	// the cancellation takes place of an ACK for any workers sending results.
 	for _, w := range c.workers {
@@ -196,11 +208,14 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
+			TraceToken: args.TraceToken,
+			Secret: result.Secret,
 		}
-		c.tracer.RecordAction(CoordinatorWorkerCancel{
+		trace.RecordAction(CoordinatorWorkerCancel{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
+			TraceToken: args.TraceToken,
 		})
 		err := w.client.Call("WorkerRPCHandler.Cancel", args, &struct{}{})
 		if err != nil {
@@ -219,6 +234,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			log.Printf("Counting toward acks: %v", ack)
 			workerAcksReceived += 1
 		} else {
+			// TODO: deal with extra result!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 			log.Printf("Dropping extra result: %v", ack)
 		}
 	}
@@ -230,10 +246,11 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	reply.Nonce = result.Nonce
 	reply.Secret = result.Secret
 
-	c.tracer.RecordAction(CoordinatorSuccess{
+	trace.RecordAction(CoordinatorSuccess{
 		Nonce:            reply.Nonce,
 		NumTrailingZeros: reply.NumTrailingZeros,
 		Secret:           reply.Secret,
+		TraceToken: args.TraceToken,
 	})
 	return nil
 }
@@ -241,14 +258,16 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 // Result is a non-blocking RPC from the worker that sends the solution to some previous pow instance assignment
 // back to the Coordinator
 func (c *CoordRPCHandler) Result(args CoordResultArgs, reply *struct{}) error {
+	trace := c.tracer.ReceiveToken(args.TraceToken)
 	if args.Secret != nil {
-		c.tracer.RecordAction(CoordinatorWorkerResult{
+		trace.RecordAction(CoordinatorWorkerResult{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 			Secret:           args.Secret,
+			TraceToken: args.TraceToken,
 		})
-		updateCache(c.cache, args.Nonce, args.Secret)
+		c.updateCache(c.cache, args.Nonce, args.Secret)
 	} else {
 		log.Printf("Received worker cancel ack: %v", args)
 	}
@@ -306,7 +325,7 @@ func initializeWorkers(workers []*WorkerClient) error {
 - Update the cache when the a worker sends a result back to the coordinator.
 - Remove cache entry with (n1, t) if an entry (n1, t+1) is added.
  */
-func updateCache(cache map[string][]uint8, nonce []uint8, secret []uint8) {
+func (c *CoordRPCHandler) updateCache(cache map[string][]uint8, nonce []uint8, secret []uint8) {
 	cacheKey := byteSliceToString(nonce)
 	log.Printf("Secret given: %x", secret)
 	trailingZeroes := getNumTrailingZeroes(nonce, secret)

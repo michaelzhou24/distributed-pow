@@ -18,6 +18,7 @@ type PowlibMiningBegin struct {
 type PowlibMine struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
+	TraceToken tracing.TracingToken
 }
 
 type PowlibSuccess struct {
@@ -93,12 +94,13 @@ func (d *POW) Initialize(coordAddr string, chCapacity uint) (NotifyChannel, erro
 // puzzle must be delivered asynchronously to the client via the notify-channel
 // channel returned in the Initialize call.
 func (d *POW) Mine(tracer *tracing.Tracer, nonce []uint8, numTrailingZeros uint) error {
-	tracer.RecordAction(PowlibMiningBegin{
+	trace := tracer.CreateTrace()
+	trace.RecordAction(PowlibMiningBegin{
 		Nonce:            nonce,
 		NumTrailingZeros: numTrailingZeros,
 	})
 	d.closeWg.Add(1)
-	go d.callMine(tracer, nonce, numTrailingZeros)
+	go d.callMine(trace, nonce, numTrailingZeros)
 	return nil
 }
 
@@ -124,7 +126,7 @@ func (d *POW) Close() error {
 	return nil
 }
 
-func (d *POW) callMine(tracer *tracing.Tracer, nonce []uint8, numTrailingZeros uint) {
+func (d *POW) callMine(trace *tracing.Trace, nonce []uint8, numTrailingZeros uint) {
 	defer func() {
 		log.Printf("callMine done")
 		d.closeWg.Done()
@@ -133,8 +135,9 @@ func (d *POW) callMine(tracer *tracing.Tracer, nonce []uint8, numTrailingZeros u
 	args := PowlibMine{
 		Nonce:            nonce,
 		NumTrailingZeros: numTrailingZeros,
+		TraceToken: trace.GenerateToken(),
 	}
-	tracer.RecordAction(args)
+	trace.RecordAction(args)
 
 	result := MineResult{}
 	call := d.coordinator.Go("CoordRPCHandler.Mine", args, &result, nil)
@@ -144,12 +147,12 @@ func (d *POW) callMine(tracer *tracing.Tracer, nonce []uint8, numTrailingZeros u
 			if call.Error != nil {
 				log.Fatal(call.Error)
 			} else {
-				tracer.RecordAction(PowlibSuccess{
+				trace.RecordAction(PowlibSuccess{
 					Nonce:            result.Nonce,
 					NumTrailingZeros: result.NumTrailingZeros,
 					Secret:           result.Secret,
 				})
-				tracer.RecordAction(PowlibMiningComplete{
+				trace.RecordAction(PowlibMiningComplete{
 					Nonce:            result.Nonce,
 					NumTrailingZeros: result.NumTrailingZeros,
 					Secret:           result.Secret,
