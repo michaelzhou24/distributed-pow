@@ -1,7 +1,7 @@
 .idea
 client
 coordinator
-shiviz_output.log
-trace_output.log
 tracing-server
 worker
+*.txt
+*.log

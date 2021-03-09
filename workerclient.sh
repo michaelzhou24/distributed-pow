@@ -1,11 +1,8 @@
 #!/bin/bash
 
 set -e
-make
 
 cmds=(
-      "./tracing-server"
-      "./coordinator"
       "./worker --listen 127.0.0.1:20003 --id worker0"
       "./worker --listen 127.0.0.1:20000 --id worker1"
       "./worker --listen 127.0.0.1:20001 --id worker2"
@@ -32,6 +29,7 @@ cmds=(
       "./worker --listen 127.0.0.1:20023 --id worker23"
       "./client"
       )
+
 for cmd in "${cmds[@]}"; do {
   $cmd & pid=$!
   PID_LIST+=" $pid";
