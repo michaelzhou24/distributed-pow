@@ -26,7 +26,6 @@ type WorkerMine struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	WorkerByte       uint8
-	TraceToken tracing.TracingToken
 }
 
 type WorkerResult struct {
@@ -34,7 +33,6 @@ type WorkerResult struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
-	TraceToken tracing.TracingToken
 }
 
 type WorkerCancel struct {
@@ -42,7 +40,6 @@ type WorkerCancel struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
-	TraceToken tracing.TracingToken
 }
 
 /****** RPC structs ******/
@@ -146,7 +143,6 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *struct{}) error {
 		Nonce:            args.Nonce,
 		NumTrailingZeros: args.NumTrailingZeros,
 		WorkerByte:       args.WorkerByte,
-		TraceToken: args.TraceToken,
 	})
 	go miner(w, args, cancelCh)
 
@@ -156,11 +152,19 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *struct{}) error {
 // Cancel is a non-blocking async RPC from the Coordinator
 // instructing the worker to stop solving a specific pow instance.
 // Update the cache also
-func (w *WorkerRPCHandler) Cancel(args WorkerCancelArgs, reply *struct{}) error {
-	w.updateCache(args.Nonce, args.Secret)
+func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *struct{}) error {
+	trace := w.tracer.ReceiveToken(args.TraceToken)
+	w.updateCache(trace, args.Nonce, args.NumTrailingZeros, args.Secret)
 	cancelChan, ok := w.mineTasks.get(args.Nonce, args.NumTrailingZeros, args.WorkerByte)
 	if !ok {
 		log.Printf("Received more than once cancellation for %s\n", generateWorkerTaskKey(args.Nonce, args.NumTrailingZeros, args.WorkerByte))
+		// ACK the found result; the coordinator will be waiting for this.
+		w.resultChan <- WorkerResult{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       args.WorkerByte,
+			Secret:           nil,
+		}
 		return nil
 	}
 	cancelChan <- struct{}{}
@@ -226,7 +230,6 @@ func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
 					Secret:           nil, // nil secret treated as cancel completion
-					TraceToken: args.TraceToken,
 				}
 				return
 			default:
@@ -248,12 +251,11 @@ func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
 					Secret:           wholeBuffer.Bytes()[wholeBufferTrunc:],
-					TraceToken: args.TraceToken,
 				}
 				trace.RecordAction(result)
 				w.resultChan <- result
 				// Update local cache immediately upon finding
-				w.updateCache(result.Nonce, result.Secret)
+				w.updateCache(trace, result.Nonce, result.NumTrailingZeros, result.Secret)
 				// now, wait for the worker the receive a cancellation,
 				// which the coordinator should always send no matter what.
 				// note: this position takes care of interleavings where cancellation comes after we check killChan but
@@ -266,14 +268,12 @@ func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
 					Secret:           nil,
-					TraceToken: args.TraceToken,
 				}
 				// and log it, which satisfies the (optional) stricter interpretation of WorkerCancel
 				trace.RecordAction(WorkerCancel{
 					Nonce:            args.Nonce,
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
-					TraceToken: args.TraceToken,
 				})
 				return
 			}
@@ -282,9 +282,30 @@ func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 	}
 }
 
-func (w *WorkerRPCHandler) updateCache(nonce []uint8, secret []uint8) {
+func (w *WorkerRPCHandler) updateCache(trace *tracing.Trace, nonce []uint8, numTrailingZeroes uint, secret []uint8) {
 	// TODO : check if secret dominates found secret
-	w.cache[byteSliceToString(nonce)] = secret
+
+	cacheKey := byteSliceToString(nonce)
+	log.Printf("Secret given: %x", secret)
+	trailingZeroes := getNumTrailingZeroes(nonce, secret)
+	if val, ok := w.cache[cacheKey]; ok {
+		if trailingZeroes > getNumTrailingZeroes(nonce, val) {
+			trace.RecordAction(CacheAdd{
+				Nonce:            nonce,
+				NumTrailingZeros: numTrailingZeroes,
+				Secret:           secret,
+			})
+			w.cache[cacheKey] = secret
+		}
+	} else {
+		trace.RecordAction(CacheAdd{
+			Nonce:            nonce,
+			NumTrailingZeros: numTrailingZeroes,
+			Secret:           secret,
+		})
+		w.cache[cacheKey] = secret
+	}
+	fmt.Println("worker cache state: " , w.cache)
 }
 
 func (t *WorkerMineTasks) get(nonce []uint8, numTrailingZeros uint, workerByte uint8) (CancelChan, bool) {

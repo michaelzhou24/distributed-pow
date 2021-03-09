@@ -61,7 +61,18 @@ func NewPOW() *POW {
 		closeWg:     nil,
 	}
 }
-
+//":20004",
+//":20005",
+//":20006",
+//":20007",
+//":20008",
+//":20009",
+//":20010",
+//":20011",
+//":20012",
+//":20013",
+//":20014",
+//":20015"
 // Initialize Initializes the instance of POW to use for connecting to the coordinator,
 // and the coordinators IP:port. The returned notify-channel channel must
 // have capacity ChCapacity and must be used by powlib to deliver all solution
