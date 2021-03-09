@@ -257,11 +257,12 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 		} else {
 			// TODO: deal with extra result!
 			log.Printf("extra result!: %v", ack)
-			c.handleResults(args, ack, trace, workerCount, resultChan)
-			return nil
+			if compare(ack.Nonce, ack.Secret, result.Secret) > 0 {
+				c.handleResults(args, ack, trace, workerCount, resultChan)
+				return nil
+			}
 		}
 	}
-
 	return nil
 }
 
@@ -330,6 +331,18 @@ func initializeWorkers(workers []*WorkerClient) error {
 	return nil
 }
 
+func compare(nonce []uint8, a []uint8, b []uint8) int {
+	aZeroes := getNumTrailingZeroes(nonce, a)
+	bZeroes := getNumTrailingZeroes(nonce, b)
+	if aZeroes > bZeroes {
+		return 1
+	} else if aZeroes == bZeroes {
+		return bytes.Compare(a, b)
+	} else {
+		return -1
+	}
+}
+
 /*
 - Update the cache when the a worker sends a result back to the coordinator.
 - Remove cache entry with (n1, t) if an entry (n1, t+1) is added.
@@ -337,9 +350,9 @@ func initializeWorkers(workers []*WorkerClient) error {
 func updateCache(trace *tracing.Trace, numTrailingZeroes uint, cache map[string][]uint8, nonce []uint8, secret []uint8) {
 	cacheKey := byteSliceToString(nonce)
 	//log.Printf("Secret given: %x", secret)
-	trailingZeroes := getNumTrailingZeroes(nonce, secret)
+	//trailingZeroes := getNumTrailingZeroes(nonce, secret)
 	if val, ok := cache[cacheKey]; ok {
-		if trailingZeroes > getNumTrailingZeroes(nonce, val) {
+		if compare(nonce, secret, val) > 0 {
 			trace.RecordAction(CacheRemove{
 				Nonce:            nonce,
 				NumTrailingZeros: numTrailingZeroes,
@@ -347,6 +360,23 @@ func updateCache(trace *tracing.Trace, numTrailingZeroes uint, cache map[string]
 			})
 			cache[cacheKey] = secret
 		}
+		//valTrailingZeroes := getNumTrailingZeroes(nonce, val)
+		//if trailingZeroes >  valTrailingZeroes {
+		//	trace.RecordAction(CacheRemove{
+		//		Nonce:            nonce,
+		//		NumTrailingZeros: numTrailingZeroes,
+		//		Secret:           secret,
+		//	})
+		//	cache[cacheKey] = secret
+		//} else if trailingZeroes == valTrailingZeroes && bytes.Compare(secret, val) > 0 {
+		//	// TODO: Do we still do cache remove here?
+		//	trace.RecordAction(CacheRemove{
+		//		Nonce:            nonce,
+		//		NumTrailingZeros: numTrailingZeroes,
+		//		Secret:           secret,
+		//	})
+		//	cache[cacheKey] = secret
+		//}
 	} else {
 		trace.RecordAction(CacheAdd{
 			Nonce:            nonce,
