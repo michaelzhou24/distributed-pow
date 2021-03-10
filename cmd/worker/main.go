@@ -32,6 +32,9 @@ func main() {
 			Secret:           res.Secret,
 			TraceToken: res.TraceToken,
 		}
-		worker.Coordinator.Go("CoordRPCHandler.Result", result, &struct{}{}, nil)
+		// TODO: fix this!
+		resultReply := distpow.RPCToken{}
+		worker.Coordinator.Go("CoordRPCHandler.Result", result, &resultReply, nil)
+		//worker.Tracer.ReceiveToken(resultReply.TraceToken)
 	}
 }
