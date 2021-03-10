@@ -30,6 +30,7 @@ func main() {
 			NumTrailingZeros: res.NumTrailingZeros,
 			WorkerByte:       res.WorkerByte,
 			Secret:           res.Secret,
+			TraceToken: res.TraceToken,
 		}
 		worker.Coordinator.Go("CoordRPCHandler.Result", result, &struct{}{}, nil)
 	}
