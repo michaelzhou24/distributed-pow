@@ -88,10 +88,6 @@ type CoordResultArgs struct {
 	TraceToken tracing.TracingToken
 }
 
-type RPCToken struct {
-	TraceToken tracing.TracingToken
-}
-
 type ResultChan chan CoordResultArgs
 
 type CoordRPCHandler struct {
@@ -155,7 +151,6 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			reply.NumTrailingZeros = args.NumTrailingZeros
 			reply.Nonce = args.Nonce
 			reply.Secret = val
-			reply.TraceToken = trace.GenerateToken()
 
 			trace.RecordAction(CoordinatorSuccess{
 				Nonce:            reply.Nonce,
@@ -189,7 +184,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
 			WorkerBits:       c.workerBits,
-			TraceToken: 	trace.GenerateToken(),
+			TraceToken: args.TraceToken,
 		}
 
 		trace.RecordAction(CoordinatorWorkerMine{
@@ -197,9 +192,8 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 		})
-		workerMineReply := RPCToken{}
-		err := w.client.Call("WorkerRPCHandler.Mine", args, &workerMineReply)
-		c.tracer.ReceiveToken(workerMineReply.TraceToken)
+
+		err := w.client.Call("WorkerRPCHandler.Mine", args, &struct{}{})
 		if err != nil {
 			return err
 		}
@@ -225,7 +219,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	reply.NumTrailingZeros = result.NumTrailingZeros
 	reply.Nonce = result.Nonce
 	reply.Secret = result.Secret
-	reply.TraceToken = trace.GenerateToken()
+
 	trace.RecordAction(CoordinatorSuccess{
 		Nonce:            reply.Nonce,
 		NumTrailingZeros: reply.NumTrailingZeros,
@@ -242,7 +236,7 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
-			TraceToken:       trace.GenerateToken(),
+			TraceToken:       args.TraceToken,
 			Secret:           result.Secret,
 		}
 		trace.RecordAction(CoordinatorWorkerCancel{
@@ -250,9 +244,7 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 		})
-		workerFoundReply := RPCToken{}
-		err := w.client.Call("WorkerRPCHandler.Found", args, &workerFoundReply)
-		c.tracer.ReceiveToken(workerFoundReply.TraceToken)
+		err := w.client.Call("WorkerRPCHandler.Found", args, &struct{}{})
 		if err != nil {
 			return err
 		}
