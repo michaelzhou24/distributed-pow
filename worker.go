@@ -155,35 +155,41 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 		NumTrailingZeros: args.NumTrailingZeros,
 		WorkerByte:       args.WorkerByte,
 	})
-	if w.isInCache(args.Nonce, args.NumTrailingZeros) {
+	if val := w.cacheContains(args.Nonce, args.NumTrailingZeros) ; val != nil {
 		trace.RecordAction(CacheHit{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
-			Secret:           w.cache[byteSliceToString(args.Nonce)],
+			Secret:           val,
 		})
-		//result := WorkerResultArgs{
-		//	Nonce:            args.Nonce,
-		//	NumTrailingZeros: args.NumTrailingZeros,
-		//	WorkerByte: args.WorkerByte,
-		//	Secret:           w.cache[byteSliceToString(args.Nonce)],
-		//	TraceToken: args.TraceToken,
-		//}
-		//w.resultChan <- result
-		//<-cancelCh
-		//// ACK the cancellation; the coordinator will be waiting for this.
-		//w.resultChan <- WorkerResultArgs{
-		//	Nonce:            args.Nonce,
-		//	NumTrailingZeros: args.NumTrailingZeros,
-		//	WorkerByte:       args.WorkerByte,
-		//	Secret:           nil,
-		//	TraceToken: args.TraceToken,
-		//}
-		//// and log it, which satisfies the (optional) stricter interpretation of WorkerCancel
-		//trace.RecordAction(WorkerCancel{
-		//	Nonce:            args.Nonce,
-		//	NumTrailingZeros: args.NumTrailingZeros,
-		//	WorkerByte:       args.WorkerByte,
-		//})
+		trace.RecordAction(WorkerResult{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       args.WorkerByte,
+			Secret:           val,
+		})
+		result := WorkerResultArgs{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte: args.WorkerByte,
+			Secret:           val,
+			TraceToken: trace.GenerateToken(),
+		}
+		w.resultChan <- result
+		<-cancelCh
+		// and log it, which satisfies the (optional) stricter interpretation of WorkerCancel
+		trace.RecordAction(WorkerCancel{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       args.WorkerByte,
+		})
+		// ACK the cancellation; the coordinator will be waiting for this.
+		w.resultChan <- WorkerResultArgs{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       args.WorkerByte,
+			Secret:           nil,
+			TraceToken: trace.GenerateToken(),
+		}
 		reply.TraceToken = trace.GenerateToken()
 		return nil
 	} else {
@@ -202,11 +208,11 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 // Update the cache also
 func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *RPCToken) error {
 	trace := w.tracer.ReceiveToken(args.TraceToken)
-	if w.isInCache(args.Nonce, args.NumTrailingZeros) { // more zeroes or equivalent
+	if val := w.cacheContains(args.Nonce, args.NumTrailingZeros) ; val != nil { // more zeroes or equivalent
 		trace.RecordAction(CacheHit{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
-			Secret:           w.cache[byteSliceToString(args.Nonce)],
+			Secret:           val,
 		})
 	} else {
 		trace.RecordAction(CacheMiss{
@@ -237,12 +243,18 @@ func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *RPCToken) error {
 	return nil
 }
 
-func (w *WorkerRPCHandler) isInCache(nonce []uint8, numTrailingZeroes uint) bool {
+// nil if not in cache
+// return secret in cache otherwise
+func (w *WorkerRPCHandler) cacheContains(nonce []uint8, numTrailingZeroes uint) []uint8 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	cacheKey := byteSliceToString(nonce)
-	if val, ok := w.nonceMap[cacheKey]; ok {
-		return val >= numTrailingZeroes
+	if val, ok := w.cache[cacheKey]; ok {
+		if t, ok2 := w.nonceMap[cacheKey]; ok2 && t >= numTrailingZeroes {
+			return val
+		}
 	}
-	return false
+	return nil
 }
 
 /*
