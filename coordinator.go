@@ -100,6 +100,10 @@ type CoordRPCHandler struct {
 	nonceMap   map[string]uint // nonce->t
 }
 
+type RPCToken struct {
+	TraceToken tracing.TracingToken
+}
+
 type CoordinatorMineTasks struct {
 	mu    sync.Mutex
 	tasks map[string]ResultChan
@@ -137,35 +141,34 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	})
 
 	// check cache before doing anything
-	cacheKey := byteSliceToString(args.Nonce)
-	c.mu.Lock()
-	if val, ok := c.cache[cacheKey]; ok {
+	//cacheKey := byteSliceToString(args.Nonce)
+	//if val, ok := c.cache[cacheKey]; ok {
 		//log.Printf("Cache hit, checking if numtrailingzeroes matches %x\n", val)
-		if c.nonceMap[cacheKey] >= args.NumTrailingZeros {
+		//if c.nonceMap[cacheKey] >= args.NumTrailingZeros {
 			//log.Printf("Cache hit! Got secret %x with nonce %x.\n", args.Nonce, val)
-			trace.RecordAction(CacheHit{
-				Nonce:            args.Nonce,
-				NumTrailingZeros: args.NumTrailingZeros,
-				Secret:           val,
-			})
-			reply.NumTrailingZeros = args.NumTrailingZeros
-			reply.Nonce = args.Nonce
-			reply.Secret = val
-
-			trace.RecordAction(CoordinatorSuccess{
-				Nonce:            reply.Nonce,
-				NumTrailingZeros: reply.NumTrailingZeros,
-				Secret:           reply.Secret,
-			})
-			c.mu.Unlock()
-			return nil
-		}
+	if sec := c.cacheContains(args.Nonce, args.NumTrailingZeros) ; sec != nil {
+		trace.RecordAction(CacheHit{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			Secret:           sec,
+		})
+		reply.NumTrailingZeros = args.NumTrailingZeros
+		reply.Nonce = args.Nonce
+		reply.Secret = sec
+		reply.TraceToken = trace.GenerateToken()
+		trace.RecordAction(CoordinatorSuccess{
+			Nonce:            reply.Nonce,
+			NumTrailingZeros: reply.NumTrailingZeros,
+			Secret:           reply.Secret,
+		})
+		return nil
+		//}
 	}
-	c.mu.Unlock()
 	trace.RecordAction(CacheMiss{
 		Nonce:            args.Nonce,
 		NumTrailingZeros: args.NumTrailingZeros,
 	})
+
 
 	// initialize and connect to workers (if not already connected)
 	for err := initializeWorkers(c.workers); err != nil; {
@@ -184,7 +187,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
 			WorkerBits:       c.workerBits,
-			TraceToken: args.TraceToken,
+			TraceToken: trace.GenerateToken(),
 		}
 
 		trace.RecordAction(CoordinatorWorkerMine{
@@ -192,11 +195,12 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 		})
-
-		err := w.client.Call("WorkerRPCHandler.Mine", args, &struct{}{})
+		workerReply := RPCToken{}
+		err := w.client.Call("WorkerRPCHandler.Mine", args, &workerReply)
 		if err != nil {
 			return err
 		}
+		c.tracer.ReceiveToken(workerReply.TraceToken)
 	}
 
 	// wait for at least one result
@@ -219,7 +223,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	reply.NumTrailingZeros = result.NumTrailingZeros
 	reply.Nonce = result.Nonce
 	reply.Secret = result.Secret
-
+	reply.TraceToken = trace.GenerateToken()
 	trace.RecordAction(CoordinatorSuccess{
 		Nonce:            reply.Nonce,
 		NumTrailingZeros: reply.NumTrailingZeros,
@@ -236,7 +240,7 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
-			TraceToken:       args.TraceToken,
+			TraceToken:       trace.GenerateToken(),
 			Secret:           result.Secret,
 		}
 		trace.RecordAction(CoordinatorWorkerCancel{
@@ -244,10 +248,12 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 		})
-		err := w.client.Call("WorkerRPCHandler.Found", args, &struct{}{})
+		reply := RPCToken{}
+		err := w.client.Call("WorkerRPCHandler.Found", args, &reply)
 		if err != nil {
 			return err
 		}
+		c.tracer.ReceiveToken(reply.TraceToken)
 	}
 
 	log.Printf("Waiting for %d acks from workers, then we are done", workerCount)
@@ -283,6 +289,18 @@ func (c *CoordRPCHandler) Result(args CoordResultArgs, reply *struct{}) error {
 			WorkerByte:       args.WorkerByte,
 			Secret:           args.Secret,
 		})
+		if sec := c.cacheContains(args.Nonce, args.NumTrailingZeros); sec != nil {
+			trace.RecordAction(CacheHit{
+				Nonce:            args.Nonce,
+				NumTrailingZeros: args.NumTrailingZeros,
+				Secret:           sec,
+			})
+		} else {
+			trace.RecordAction(CacheMiss{
+				Nonce:            args.Nonce,
+				NumTrailingZeros: args.NumTrailingZeros,
+			})
+		}
 		c.updateCache(trace, args.NumTrailingZeros, c.cache, c.nonceMap, args.Nonce, args.Secret)
 	} else {
 		log.Printf("Received worker cancel ack: %v", args)
@@ -341,6 +359,20 @@ func initializeWorkers(workers []*WorkerClient) error {
 func compare(nonce []uint8, t2 uint, nonceMap map[string]uint, s1 []uint8, s2 []uint8) bool {
 	return t2 > nonceMap[byteSliceToString(nonce)] ||
 		(t2 == nonceMap[byteSliceToString(nonce)] && bytes.Compare(s2, s1) > 0)
+}
+
+// nil if not in cache
+// return secret in cache otherwise
+func (c *CoordRPCHandler) cacheContains(nonce []uint8, numTrailingZeroes uint) []uint8 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cacheKey := byteSliceToString(nonce)
+	if val, ok := c.cache[cacheKey]; ok {
+		if t, ok2 := c.nonceMap[cacheKey]; ok2 && t >= numTrailingZeroes {
+			return val
+		}
+	}
+	return nil
 }
 
 /*

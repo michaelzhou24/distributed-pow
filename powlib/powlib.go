@@ -38,6 +38,7 @@ type MineResult struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	Secret           []uint8
+	TraceToken tracing.TracingToken
 }
 
 // NotifyChannel is used for notifying the client about a mining result.
@@ -111,7 +112,7 @@ func (d *POW) Mine(tracer *tracing.Tracer, nonce []uint8, numTrailingZeros uint)
 		NumTrailingZeros: numTrailingZeros,
 	})
 	d.closeWg.Add(1)
-	go d.callMine(trace, nonce, numTrailingZeros)
+	go d.callMine(tracer, trace, nonce, numTrailingZeros)
 	return nil
 }
 
@@ -137,7 +138,7 @@ func (d *POW) Close() error {
 	return nil
 }
 
-func (d *POW) callMine(trace *tracing.Trace, nonce []uint8, numTrailingZeros uint) {
+func (d *POW) callMine(tracer *tracing.Tracer, trace *tracing.Trace, nonce []uint8, numTrailingZeros uint) {
 	defer func() {
 		log.Printf("callMine done")
 		d.closeWg.Done()
@@ -158,6 +159,7 @@ func (d *POW) callMine(trace *tracing.Trace, nonce []uint8, numTrailingZeros uin
 			if call.Error != nil {
 				log.Fatal(call.Error)
 			} else {
+				tracer.ReceiveToken(result.TraceToken)
 				trace.RecordAction(PowlibSuccess{
 					Nonce:            result.Nonce,
 					NumTrailingZeros: result.NumTrailingZeros,
