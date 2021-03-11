@@ -71,4 +71,5 @@ func main() {
 			log.Println(mineResult)
 		}
 	}
+	log.Println("Client done!")
 }

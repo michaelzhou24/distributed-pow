@@ -191,7 +191,7 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
 		})
-		go miner(w, args, cancelCh)
+		go miner(trace, w, args, cancelCh)
 		reply.TraceToken = trace.GenerateToken()
 		return nil
 	}
@@ -307,8 +307,7 @@ func hasNumZeroesSuffix(str []byte, numZeroes uint) bool {
 	return trailingZeroesFound >= numZeroes
 }
 
-func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
-	trace := w.tracer.ReceiveToken(args.TraceToken)
+func miner(trace *tracing.Trace,w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 	chunk := []uint8{}
 	remainderBits := 8 - (args.WorkerBits % 9)
 
@@ -357,6 +356,12 @@ func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 			hashStrBuf.Reset()
 			fmt.Fprintf(hashStrBuf, "%x", hash)
 			if hasNumZeroesSuffix(hashStrBuf.Bytes(), args.NumTrailingZeros) {
+				trace.RecordAction(WorkerResult{
+					Nonce:            args.Nonce,
+					NumTrailingZeros: args.NumTrailingZeros,
+					WorkerByte:       args.WorkerByte,
+					Secret:           wholeBuffer.Bytes()[wholeBufferTrunc:],
+				})
 				result := WorkerResultArgs{
 					Nonce:            args.Nonce,
 					NumTrailingZeros: args.NumTrailingZeros,
@@ -364,12 +369,6 @@ func miner(w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 					Secret:           wholeBuffer.Bytes()[wholeBufferTrunc:],
 					TraceToken: trace.GenerateToken(),
 				}
-				trace.RecordAction(WorkerResult{
-					Nonce:            args.Nonce,
-					NumTrailingZeros: args.NumTrailingZeros,
-					WorkerByte:       args.WorkerByte,
-					Secret:           wholeBuffer.Bytes()[wholeBufferTrunc:],
-				})
 				w.resultChan <- result
 				// Update local cache immediately upon finding
 				w.updateCache(trace, result.NumTrailingZeros, w.cache, w.nonceMap, result.Nonce, result.Secret)

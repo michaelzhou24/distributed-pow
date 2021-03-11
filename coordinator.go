@@ -182,6 +182,11 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	c.mineTasks.set(args.Nonce, args.NumTrailingZeros, resultChan)
 
 	for _, w := range c.workers {
+		trace.RecordAction(CoordinatorWorkerMine{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       w.workerByte,
+		})
 		args := WorkerMineArgs{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
@@ -189,12 +194,6 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			WorkerBits:       c.workerBits,
 			TraceToken: trace.GenerateToken(),
 		}
-
-		trace.RecordAction(CoordinatorWorkerMine{
-			Nonce:            args.Nonce,
-			NumTrailingZeros: args.NumTrailingZeros,
-			WorkerByte:       args.WorkerByte,
-		})
 		workerReply := RPCToken{}
 		err := w.client.Call("WorkerRPCHandler.Mine", args, &workerReply)
 		if err != nil {
@@ -236,6 +235,11 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 
 func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultArgs, trace *tracing.Trace, workerCount int, resultChan chan CoordResultArgs) error {
 	for _, w := range c.workers {
+		trace.RecordAction(CoordinatorWorkerCancel{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       w.workerByte,
+		})
 		args := WorkerCancelArgs{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
@@ -243,11 +247,6 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 			TraceToken:       trace.GenerateToken(),
 			Secret:           result.Secret,
 		}
-		trace.RecordAction(CoordinatorWorkerCancel{
-			Nonce:            args.Nonce,
-			NumTrailingZeros: args.NumTrailingZeros,
-			WorkerByte:       args.WorkerByte,
-		})
 		reply := RPCToken{}
 		err := w.client.Call("WorkerRPCHandler.Found", args, &reply)
 		if err != nil {
