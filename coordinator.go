@@ -155,12 +155,12 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 		reply.NumTrailingZeros = args.NumTrailingZeros
 		reply.Nonce = args.Nonce
 		reply.Secret = sec
-		reply.TraceToken = trace.GenerateToken()
 		trace.RecordAction(CoordinatorSuccess{
 			Nonce:            reply.Nonce,
 			NumTrailingZeros: reply.NumTrailingZeros,
 			Secret:           reply.Secret,
 		})
+		reply.TraceToken = trace.GenerateToken()
 		return nil
 		//}
 	}
