@@ -21,6 +21,12 @@ type PowlibMine struct {
 	TraceToken tracing.TracingToken
 }
 
+type PowlibMineArgs struct {
+	Nonce            []uint8
+	NumTrailingZeros uint
+	TraceToken tracing.TracingToken
+}
+
 type PowlibSuccess struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
@@ -144,12 +150,15 @@ func (d *POW) callMine(tracer *tracing.Tracer, trace *tracing.Trace, nonce []uin
 		d.closeWg.Done()
 	}()
 
-	args := PowlibMine{
+	trace.RecordAction(PowlibMine{
+		Nonce:            nonce,
+		NumTrailingZeros: numTrailingZeros,
+	})
+	args := PowlibMineArgs{
 		Nonce:            nonce,
 		NumTrailingZeros: numTrailingZeros,
 		TraceToken: trace.GenerateToken(),
 	}
-	trace.RecordAction(args)
 
 	result := MineResult{}
 	call := d.coordinator.Go("CoordRPCHandler.Mine", args, &result, nil)
