@@ -221,12 +221,12 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	reply.NumTrailingZeros = result.NumTrailingZeros
 	reply.Nonce = result.Nonce
 	reply.Secret = result.Secret
-	reply.TraceToken = trace.GenerateToken()
 	trace.RecordAction(CoordinatorSuccess{
 		Nonce:            reply.Nonce,
 		NumTrailingZeros: reply.NumTrailingZeros,
 		Secret:           reply.Secret,
 	})
+	reply.TraceToken = trace.GenerateToken()
 	fmt.Println("cache state: ", c.cache)
 	fmt.Println(c.nonceMap)
 	return nil
