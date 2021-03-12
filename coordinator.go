@@ -70,14 +70,14 @@ type Coordinator struct {
 type CoordMineArgs struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type CoordMineResponse struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	Secret           []uint8
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type CoordResultArgs struct {
@@ -85,7 +85,7 @@ type CoordResultArgs struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type ResultChan chan CoordResultArgs
@@ -95,9 +95,9 @@ type CoordRPCHandler struct {
 	workers    []*WorkerClient
 	workerBits uint
 	mineTasks  CoordinatorMineTasks
-	mu    sync.Mutex
+	mu         sync.Mutex
 	cache      map[string][]uint8 // nonce->secret
-	nonceMap   map[string]uint // nonce->t
+	nonceMap   map[string]uint    // nonce->t
 }
 
 type RPCToken struct {
@@ -143,10 +143,10 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 	// check cache before doing anything
 	//cacheKey := byteSliceToString(args.Nonce)
 	//if val, ok := c.cache[cacheKey]; ok {
-		//log.Printf("Cache hit, checking if numtrailingzeroes matches %x\n", val)
-		//if c.nonceMap[cacheKey] >= args.NumTrailingZeros {
-			//log.Printf("Cache hit! Got secret %x with nonce %x.\n", args.Nonce, val)
-	if sec := c.cacheContains(args.Nonce, args.NumTrailingZeros) ; sec != nil {
+	//log.Printf("Cache hit, checking if numtrailingzeroes matches %x\n", val)
+	//if c.nonceMap[cacheKey] >= args.NumTrailingZeros {
+	//log.Printf("Cache hit! Got secret %x with nonce %x.\n", args.Nonce, val)
+	if sec := c.cacheContains(args.Nonce, args.NumTrailingZeros); sec != nil {
 		trace.RecordAction(CacheHit{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
@@ -168,7 +168,6 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 		Nonce:            args.Nonce,
 		NumTrailingZeros: args.NumTrailingZeros,
 	})
-
 
 	// initialize and connect to workers (if not already connected)
 	for err := initializeWorkers(c.workers); err != nil; {
@@ -192,7 +191,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       w.workerByte,
 			WorkerBits:       c.workerBits,
-			TraceToken: trace.GenerateToken(),
+			TraceToken:       trace.GenerateToken(),
 		}
 		workerReply := RPCToken{}
 		err := w.client.Call("WorkerRPCHandler.Mine", args, &workerReply)
@@ -228,7 +227,7 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 		NumTrailingZeros: reply.NumTrailingZeros,
 		Secret:           reply.Secret,
 	})
-	fmt.Println("cache state: " , c.cache)
+	fmt.Println("cache state: ", c.cache)
 	fmt.Println(c.nonceMap)
 	return nil
 }
@@ -327,7 +326,7 @@ func (c *Coordinator) InitializeRPCs() error {
 		mineTasks: CoordinatorMineTasks{
 			tasks: make(map[string]ResultChan),
 		},
-		cache: make(map[string][]uint8),
+		cache:    make(map[string][]uint8),
 		nonceMap: make(map[string]uint),
 	}
 	server := rpc.NewServer()
@@ -388,7 +387,7 @@ func (c *CoordRPCHandler) cacheContains(nonce []uint8, numTrailingZeroes uint) [
 /*
 - Update the cache when the a worker sends a result back to the coordinator.
 - Remove cache entry with (n1, t) if an entry (n1, t+1) is added.
- */
+*/
 func (c *CoordRPCHandler) updateCache(trace *tracing.Trace, numTrailingZeroes uint, cache map[string][]uint8, nonceMap map[string]uint, nonce []uint8, secret []uint8) {
 	cacheKey := byteSliceToString(nonce)
 	//log.Printf("Secret given: %x", secret)
@@ -396,7 +395,7 @@ func (c *CoordRPCHandler) updateCache(trace *tracing.Trace, numTrailingZeroes ui
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if val, ok := cache[cacheKey]; ok {
-		if compare(nonce, numTrailingZeroes, nonceMap, val, secret){
+		if compare(nonce, numTrailingZeroes, nonceMap, val, secret) {
 			trace.RecordAction(CacheRemove{
 				Nonce:            nonce,
 				NumTrailingZeros: nonceMap[byteSliceToString(nonce)],
@@ -455,7 +454,7 @@ func getCacheKey(nonce []uint8, numTrailingZeroes uint) string {
 	return fmt.Sprintf("%s___%d", byteSliceToString(nonce), numTrailingZeroes)
 }
 
-func getNumTrailingZeroes(nonce []uint8,secret []uint8) uint {
+func getNumTrailingZeroes(nonce []uint8, secret []uint8) uint {
 	hashStrBuf := new(bytes.Buffer)
 	secretBuf := new(bytes.Buffer)
 	if _, err := secretBuf.Write(nonce); err != nil {

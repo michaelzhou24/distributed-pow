@@ -18,13 +18,13 @@ type PowlibMiningBegin struct {
 type PowlibMine struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type PowlibMineArgs struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type PowlibSuccess struct {
@@ -44,7 +44,7 @@ type MineResult struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	Secret           []uint8
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 // NotifyChannel is used for notifying the client about a mining result.
@@ -68,6 +68,7 @@ func NewPOW() *POW {
 		closeWg:     nil,
 	}
 }
+
 //":20004",
 //":20005",
 //":20006",
@@ -157,7 +158,7 @@ func (d *POW) callMine(tracer *tracing.Tracer, trace *tracing.Trace, nonce []uin
 	args := PowlibMineArgs{
 		Nonce:            nonce,
 		NumTrailingZeros: numTrailingZeros,
-		TraceToken: trace.GenerateToken(),
+		TraceToken:       trace.GenerateToken(),
 	}
 
 	result := MineResult{}

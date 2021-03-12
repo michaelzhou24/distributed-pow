@@ -47,7 +47,7 @@ type WorkerResultArgs struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type WorkerMineArgs struct {
@@ -55,7 +55,7 @@ type WorkerMineArgs struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	WorkerBits       uint
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type WorkerCancelArgs struct {
@@ -63,7 +63,7 @@ type WorkerCancelArgs struct {
 	NumTrailingZeros uint
 	WorkerByte       uint8
 	Secret           []uint8
-	TraceToken tracing.TracingToken
+	TraceToken       tracing.TracingToken
 }
 
 type CancelChan chan struct{}
@@ -86,9 +86,9 @@ type WorkerRPCHandler struct {
 	coordinator *rpc.Client
 	mineTasks   WorkerMineTasks
 	resultChan  chan WorkerResultArgs
-	mu sync.Mutex
-	cache map[string][]uint8
-	nonceMap   map[string]uint
+	mu          sync.Mutex
+	cache       map[string][]uint8
+	nonceMap    map[string]uint
 }
 
 func NewWorker(config WorkerConfig) *Worker {
@@ -121,8 +121,8 @@ func (w *Worker) InitializeWorkerRPCs() error {
 			tasks: make(map[string]CancelChan),
 		},
 		resultChan: w.ResultChannel,
-		cache: make(map[string][]uint8),
-		nonceMap: make(map[string]uint),
+		cache:      make(map[string][]uint8),
+		nonceMap:   make(map[string]uint),
 	})
 
 	// publish Worker RPCs
@@ -154,7 +154,7 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 		NumTrailingZeros: args.NumTrailingZeros,
 		WorkerByte:       args.WorkerByte,
 	})
-	if val := w.cacheContains(args.Nonce, args.NumTrailingZeros) ; val != nil {
+	if val := w.cacheContains(args.Nonce, args.NumTrailingZeros); val != nil {
 		trace.RecordAction(CacheHit{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
@@ -169,9 +169,9 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 		result := WorkerResultArgs{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
-			WorkerByte: args.WorkerByte,
+			WorkerByte:       args.WorkerByte,
 			Secret:           val,
-			TraceToken: trace.GenerateToken(),
+			TraceToken:       trace.GenerateToken(),
 		}
 		w.resultChan <- result
 		<-cancelCh
@@ -187,7 +187,7 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 			Secret:           nil,
-			TraceToken: trace.GenerateToken(),
+			TraceToken:       trace.GenerateToken(),
 		}
 		reply.TraceToken = trace.GenerateToken()
 		return nil
@@ -207,7 +207,7 @@ func (w *WorkerRPCHandler) Mine(args WorkerMineArgs, reply *RPCToken) error {
 // Update the cache also
 func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *RPCToken) error {
 	trace := w.tracer.ReceiveToken(args.TraceToken)
-	if val := w.cacheContains(args.Nonce, args.NumTrailingZeros) ; val != nil { // more zeroes or equivalent
+	if val := w.cacheContains(args.Nonce, args.NumTrailingZeros); val != nil { // more zeroes or equivalent
 		trace.RecordAction(CacheHit{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
@@ -220,7 +220,7 @@ func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *RPCToken) error {
 		})
 	}
 
-	w.updateCache(trace, args.NumTrailingZeros, w.cache, w.nonceMap, args.Nonce,  args.Secret)
+	w.updateCache(trace, args.NumTrailingZeros, w.cache, w.nonceMap, args.Nonce, args.Secret)
 	cancelChan, ok := w.mineTasks.get(args.Nonce, args.NumTrailingZeros, args.WorkerByte)
 	if !ok {
 		log.Printf("Received more than once cancellation for %s\n", generateWorkerTaskKey(args.Nonce, args.NumTrailingZeros, args.WorkerByte))
@@ -235,7 +235,7 @@ func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *RPCToken) error {
 			NumTrailingZeros: args.NumTrailingZeros,
 			WorkerByte:       args.WorkerByte,
 			Secret:           nil,
-			TraceToken: trace.GenerateToken(),
+			TraceToken:       trace.GenerateToken(),
 		}
 		reply.TraceToken = trace.GenerateToken()
 		return nil
@@ -272,7 +272,7 @@ func (w *WorkerRPCHandler) updateCache(trace *tracing.Trace, numTrailingZeroes u
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if val, ok := cache[cacheKey]; ok {
-		if compare(nonce, numTrailingZeroes, nonceMap, val, secret){
+		if compare(nonce, numTrailingZeroes, nonceMap, val, secret) {
 			trace.RecordAction(CacheRemove{
 				Nonce:            nonce,
 				NumTrailingZeros: nonceMap[byteSliceToString(nonce)],
@@ -323,7 +323,7 @@ func hasNumZeroesSuffix(str []byte, numZeroes uint) bool {
 	return trailingZeroesFound >= numZeroes
 }
 
-func miner(trace *tracing.Trace,w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
+func miner(trace *tracing.Trace, w *WorkerRPCHandler, args WorkerMineArgs, killChan <-chan struct{}) {
 	chunk := []uint8{}
 	remainderBits := 8 - (args.WorkerBits % 9)
 
@@ -355,7 +355,7 @@ func miner(trace *tracing.Trace,w *WorkerRPCHandler, args WorkerMineArgs, killCh
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
 					Secret:           nil, // nil secret treated as cancel completion
-					TraceToken: trace.GenerateToken(),
+					TraceToken:       trace.GenerateToken(),
 				}
 				return
 			default:
@@ -383,7 +383,7 @@ func miner(trace *tracing.Trace,w *WorkerRPCHandler, args WorkerMineArgs, killCh
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
 					Secret:           wholeBuffer.Bytes()[wholeBufferTrunc:],
-					TraceToken: trace.GenerateToken(),
+					TraceToken:       trace.GenerateToken(),
 				}
 				w.resultChan <- result
 				// Update local cache immediately upon finding
@@ -406,7 +406,7 @@ func miner(trace *tracing.Trace,w *WorkerRPCHandler, args WorkerMineArgs, killCh
 					NumTrailingZeros: args.NumTrailingZeros,
 					WorkerByte:       args.WorkerByte,
 					Secret:           nil,
-					TraceToken: trace.GenerateToken(),
+					TraceToken:       trace.GenerateToken(),
 				}
 
 				return

@@ -30,7 +30,7 @@ func main() {
 			NumTrailingZeros: res.NumTrailingZeros,
 			WorkerByte:       res.WorkerByte,
 			Secret:           res.Secret,
-			TraceToken: res.TraceToken,
+			TraceToken:       res.TraceToken,
 		}
 		go sendResult(worker, result)
 	}
@@ -44,4 +44,3 @@ func sendResult(worker *distpow.Worker, result distpow.CoordResultArgs) {
 	}
 	// todo
 }
-
