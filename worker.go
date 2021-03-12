@@ -39,7 +39,6 @@ type WorkerCancel struct {
 	Nonce            []uint8
 	NumTrailingZeros uint
 	WorkerByte       uint8
-	Secret           []uint8
 }
 
 /****** RPC structs ******/
@@ -226,6 +225,11 @@ func (w *WorkerRPCHandler) Found(args WorkerCancelArgs, reply *RPCToken) error {
 	if !ok {
 		log.Printf("Received more than once cancellation for %s\n", generateWorkerTaskKey(args.Nonce, args.NumTrailingZeros, args.WorkerByte))
 		// ACK the found result; the coordinator will be waiting for this.
+		trace.RecordAction(WorkerCancel{
+			Nonce:            args.Nonce,
+			NumTrailingZeros: args.NumTrailingZeros,
+			WorkerByte:       args.WorkerByte,
+		})
 		w.resultChan <- WorkerResultArgs{
 			Nonce:            args.Nonce,
 			NumTrailingZeros: args.NumTrailingZeros,
