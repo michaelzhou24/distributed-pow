@@ -234,6 +234,37 @@ func (c *CoordRPCHandler) Mine(args CoordMineArgs, reply *CoordMineResponse) err
 }
 
 func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultArgs, trace *tracing.Trace, workerCount int, resultChan chan CoordResultArgs) error {
+	err := c.sendFoundResult(args, result, trace)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Waiting for %d acks from workers, then we are done", workerCount)
+
+	// wait for all all workers to send back cancel ACK, ignoring results (receiving them is logged, but they have no further use here)
+	// we asked all workers to cancel, so we should get exactly workerCount ACKs.
+	workerAcksReceived := 0
+	for workerAcksReceived < workerCount {
+		ack := <-resultChan
+		if ack.Secret == nil {
+			log.Printf("Counting toward acks: %v", ack)
+			workerAcksReceived += 1
+		} else {
+			// TODO: deal with extra result!
+			log.Printf("Extra result!: %v", ack)
+			if compare(ack.Nonce, ack.NumTrailingZeros, c.nonceMap, result.Secret, ack.Secret) {
+				err := c.sendFoundResult(args, result, trace)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+func (c *CoordRPCHandler) sendFoundResult(args CoordMineArgs, result CoordResultArgs, trace *tracing.Trace) error {
 	for _, w := range c.workers {
 		trace.RecordAction(CoordinatorWorkerCancel{
 			Nonce:            args.Nonce,
@@ -253,26 +284,6 @@ func (c *CoordRPCHandler) handleResults(args CoordMineArgs, result CoordResultAr
 			return err
 		}
 		c.tracer.ReceiveToken(reply.TraceToken)
-	}
-
-	log.Printf("Waiting for %d acks from workers, then we are done", workerCount)
-
-	// wait for all all workers to send back cancel ACK, ignoring results (receiving them is logged, but they have no further use here)
-	// we asked all workers to cancel, so we should get exactly workerCount ACKs.
-	workerAcksReceived := 0
-	for workerAcksReceived < workerCount {
-		ack := <-resultChan
-		if ack.Secret == nil {
-			log.Printf("Counting toward acks: %v", ack)
-			workerAcksReceived += 1
-		} else {
-			// TODO: deal with extra result!
-			log.Printf("Extra result!: %v", ack)
-			if compare(ack.Nonce, ack.NumTrailingZeros, c.nonceMap, result.Secret, ack.Secret){
-				c.handleResults(args, ack, trace, workerCount, resultChan)
-				return nil
-			}
-		}
 	}
 	return nil
 }
